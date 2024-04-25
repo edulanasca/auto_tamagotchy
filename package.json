@@ -1,0 +1,19 @@
+{
+  "name": "auto_tamagotchy",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "main": "auto_tamagotchy.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@solana/spl-token": "^0.4.6",
+    "@solana/web3.js": "^1.91.7",
+    "dotenv": "^16.4.5",
+    "node-fetch": "^3.3.2"
+  }
+}
