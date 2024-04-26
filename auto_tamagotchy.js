@@ -11,7 +11,14 @@ import {
   VersionedTransaction
 } from "@solana/web3.js";
 import {getAssociatedTokenAddressSync} from "@solana/spl-token";
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+import path from 'path';
 
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const stateFilePath = path.join(__dirname, 'state.json');
+let state = {};
 const cache = {};
 const cacheDuration = 300000;
 const TAMAGOTCHY_PROGRAM = new PublicKey('tamaePALUFK3hfwTkWrkHY2aDrPqkrHHq1w6JGP1hPT');
@@ -19,6 +26,27 @@ const TAMAGOTCHY_ADMIN = new PublicKey('adTJ5xniDsxZqJVRE5WKfx8btNR9wPgv5SUJZiS7
 const SIGNER = Keypair.fromSecretKey(new Uint8Array(JSON.parse(process.env.USER_PK)))
 const SIGNER_PK = SIGNER.publicKey;
 const connection = new Connection(process.env.RPC_URL);
+
+
+function loadState() {
+  try {
+    state = JSON.parse(fs.readFileSync(stateFilePath, 'utf8'));
+  } catch (err) {
+    state = {};
+  }
+}
+
+function saveState() {
+  fs.writeFileSync(stateFilePath, JSON.stringify(state));
+}
+
+function updateState(action, mint, timestamp) {
+  if (!state[mint]) {
+    state[mint] = {};
+  }
+  state[mint][action] = timestamp;
+  saveState();
+}
 
 const [tamaUser] = PublicKey.findProgramAddressSync([
   Buffer.from('user_tamagotchi'), SIGNER_PK.toBuffer()
@@ -69,10 +97,9 @@ async function getPets(owner) {
   }
 }
 
-async function generateTx(data, mint, retry = 0) {
-  if (retry === 5) {
-    console.log("Max retries, couldn't interact");
-    return;
+async function generateTx(action, data, mint, wait = 1000, retry = 0) {
+  if (retry === 6) {
+    return "Max retries, couldn't interact";
   }
 
   const [tamaNft] = PublicKey.findProgramAddressSync([
@@ -82,7 +109,7 @@ async function generateTx(data, mint, retry = 0) {
   const nft_ata = getAssociatedTokenAddressSync(mint, SIGNER_PK);
   let msg;
 
-  const {blockhash} = await connection.getLatestBlockhash();
+  const {blockhash, lastValidBlockHeight} = await connection.getLatestBlockhash();
   msg = new TransactionMessage({
     payerKey: SIGNER_PK, recentBlockhash: blockhash,
     instructions: [
@@ -112,38 +139,64 @@ async function generateTx(data, mint, retry = 0) {
   const tx = new VersionedTransaction(msg.compileToV0Message());
   tx.sign([SIGNER]);
   try {
-    return await connection.sendTransaction(tx);
-    // const simulate = await connection.simulateTransaction(tx,);
-    // if (simulate.value.err !== null) {
-    //   console.log(simulate.value.logs);
-    //   console.log(simulate.value.err);
-    // } else {
-    //   return connection.sendTransaction(tx);
-    // }
+    const signature = await connection.sendTransaction(tx, {maxRetries: 0});
+    await connection.confirmTransaction({signature, blockhash, lastValidBlockHeight}, "processed");
+    updateState(action, mint, Date.now());
+    return signature;
   } catch (err) {
-    console.log(err);
     if (err.toString().includes("0x1770")) {
-      console.log("Already interacted waiting 1s ...");
-      await sleep(1000);
+      return "Already interacted, retrying...";
+    } else {
+      console.log(err);
     }
 
-    await generateTx(data, mint, retry + 1);
+    await sleep(wait);
+    await generateTx(data, mint, wait + 500, retry + 1);
   }
 }
 
 async function shower(mint) {
-  console.log(`Showering pet ${mint} ${await generateTx('56c3d2775ab9841f00', new PublicKey(mint))}`);
+  console.log(`Showering pet ${mint} ${await generateTx('shower', '56c3d2775ab9841f00', new PublicKey(mint))}`);
 }
 
 async function feed(mint) {
-  console.log(`Feeding pet ${mint} ${await generateTx('56c3d2775ab9841f01', new PublicKey(mint))}`);
+  console.log(`Feeding pet ${mint} ${await generateTx('feed','56c3d2775ab9841f01', new PublicKey(mint))}`);
 }
 
 async function love(mint) {
-  console.log(`Loving pet ${mint} ${await generateTx('56c3d2775ab9841f02', new PublicKey(mint))}`);
+  console.log(`Loving pet ${mint} ${await generateTx('love','56c3d2775ab9841f02', new PublicKey(mint))}`);
 }
 
+async function actionWithInterval(actionFunc, actionName, mint, interval) {
+  const lastExecuted = state[mint] && state[mint][actionName] ? state[mint][actionName] : 0;
+  const timeSinceLastExec = Date.now() - lastExecuted;
+  const waitTime = interval - timeSinceLastExec;
+
+  if (waitTime <= 0) {
+    console.log(`Immediately executing ${actionName} for pet ${mint}`);
+    await actionFunc(mint);
+    updateState(actionName, mint, Date.now());
+    console.log(`Scheduling next ${actionName} for pet ${mint} in ${interval} ms`);
+    setTimeout(async () => {
+      await actionWithInterval(actionFunc, actionName, mint, interval);
+    }, interval);
+  } else {
+    console.log(`Scheduling ${actionName} for pet ${mint} in ${waitTime} ms`);
+    setTimeout(async () => {
+      await actionFunc(mint);
+      updateState(actionName, mint, Date.now());
+      console.log(`Scheduling next ${actionName} for pet ${mint} in ${interval} ms`);
+      setTimeout(async () => {
+        await actionWithInterval(actionFunc, actionName, mint, interval);
+      }, interval);
+    }, waitTime);
+  }
+}
+
+
+
 (async () => {
+  loadState();
   const pets = await getPets(SIGNER_PK.toBase58());
   const petsMint = pets.result["token_accounts"].filter(acc => acc.delegate === tamaUser.toBase58()).map(acc => acc.mint);
 
@@ -152,36 +205,12 @@ async function love(mint) {
   const showerInterval = 24 * 60 * 60 * 1000; // every 24 hours
   const loveInterval = 8 * 60 * 60 * 1000; // every 8 hours
 
-  // for (const mint of petsMint) {
-  //   await shower(mint);
-  //   await sleep(1000);
-  //   await feed(mint);
-  //   await sleep(1000);
-  //   await love(mint);
-  //   await sleep(1000);
-  // }
-
-  setInterval(async () => {
-    console.log("Start interval shower");
-    for (const mint of petsMint) {
-      await shower(mint);
-      await sleep(1000);
-    }
-  }, showerInterval);
-
-  setInterval(async () => {
-    console.log("Start interval feed");
-    for (const mint of petsMint) {
-      await feed(mint);
-      await sleep(1000);
-    }
-  }, feedInterval);
-
-  setInterval(async () => {
-    console.log("Start interval love");
-    for (const mint of petsMint) {
-      await love(mint);
-      await sleep(1000);
-    }
-  }, loveInterval);
+  for (const mint of petsMint) {
+    await actionWithInterval(shower, 'shower', mint, showerInterval);
+    await sleep(1000);
+    await actionWithInterval(feed, 'feed', mint, feedInterval);
+    await sleep(1000);
+    await actionWithInterval(love, 'love', mint, loveInterval);
+    await sleep(1000);
+  }
 })();
