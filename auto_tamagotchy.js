@@ -12,7 +12,7 @@ import {
 } from "@solana/web3.js";
 import {getAssociatedTokenAddressSync} from "@solana/spl-token";
 import fs from 'fs';
-import { fileURLToPath } from 'url';
+import {fileURLToPath} from 'url';
 import path from 'path';
 
 
@@ -97,11 +97,8 @@ async function getPets(owner) {
   }
 }
 
-async function generateTx(action, data, mint, wait = 1000, retry = 0) {
-  if (retry === 6) {
-    return "Max retries, couldn't interact";
-  }
-
+async function generateTx(action, data, mint, wait = 1000, maxRetries = 100) {
+  let retryCount = 0;
   const [tamaNft] = PublicKey.findProgramAddressSync([
     Buffer.from('nft_tamagotchi'), mint.toBuffer()
   ], TAMAGOTCHY_PROGRAM);
@@ -109,62 +106,70 @@ async function generateTx(action, data, mint, wait = 1000, retry = 0) {
   const nft_ata = getAssociatedTokenAddressSync(mint, SIGNER_PK);
   let msg;
 
-  const {blockhash, lastValidBlockHeight} = await connection.getLatestBlockhash();
-  msg = new TransactionMessage({
-    payerKey: SIGNER_PK, recentBlockhash: blockhash,
-    instructions: [
-      ComputeBudgetProgram.setComputeUnitLimit({units: 30_000}),
-      ComputeBudgetProgram.setComputeUnitPrice({microLamports: 100_000}),
-      new TransactionInstruction({
-        data: Buffer.from(data, 'hex'),
-        keys: [
-          // nft
-          {isSigner: false, isWritable: true, pubkey: tamaNft},
-          // config
-          {isSigner: false, isWritable: true, pubkey: tamaConfig},
-          // user
-          {isSigner: false, isWritable: true, pubkey: tamaUser},
-          // NFT mint address
-          {isSigner: false, isWritable: false, pubkey: mint},
-          // NFT owner
-          {isSigner: true, isWritable: true, pubkey: SIGNER_PK},
-          // NFT Ata
-          {isSigner: false, isWritable: true, pubkey: nft_ata},
-          {isSigner: false, isWritable: false, pubkey: SystemProgram.programId}
-        ],
-        programId: TAMAGOTCHY_PROGRAM
-      })
-    ]
-  });
-  const tx = new VersionedTransaction(msg.compileToV0Message());
-  tx.sign([SIGNER]);
-  try {
-    const signature = await connection.sendTransaction(tx, {maxRetries: 0});
-    await connection.confirmTransaction({signature, blockhash, lastValidBlockHeight}, "processed");
-    updateState(action, mint, Date.now());
-    return signature;
-  } catch (err) {
-    if (err.toString().includes("0x1770")) {
-      return "Already interacted, retrying...";
-    } else {
-      console.log(err);
-    }
+  while (retryCount <= maxRetries) {
+    try {
+      const {blockhash, lastValidBlockHeight} = await connection.getLatestBlockhash({commitment: "confirmed"});
+      msg = new TransactionMessage({
+        payerKey: SIGNER_PK, recentBlockhash: blockhash,
+        instructions: [
+          ComputeBudgetProgram.setComputeUnitLimit({units: 30_000}),
+          ComputeBudgetProgram.setComputeUnitPrice({microLamports: 100_000}),
+          new TransactionInstruction({
+            data: Buffer.from(data, 'hex'),
+            keys: [
+              // nft
+              {isSigner: false, isWritable: true, pubkey: tamaNft},
+              // config
+              {isSigner: false, isWritable: true, pubkey: tamaConfig},
+              // user
+              {isSigner: false, isWritable: true, pubkey: tamaUser},
+              // NFT mint address
+              {isSigner: false, isWritable: false, pubkey: mint},
+              // NFT owner
+              {isSigner: true, isWritable: true, pubkey: SIGNER_PK},
+              // NFT Ata
+              {isSigner: false, isWritable: true, pubkey: nft_ata},
+              {isSigner: false, isWritable: false, pubkey: SystemProgram.programId}
+            ],
+            programId: TAMAGOTCHY_PROGRAM
+          })
+        ]
+      });
+      const tx = new VersionedTransaction(msg.compileToV0Message());
+      tx.sign([SIGNER]);
+      const signature = await connection.sendTransaction(tx, {maxRetries: 0});
+      await sleep(450);
+      await connection.confirmTransaction({signature, blockhash, lastValidBlockHeight}, "processed");
+      updateState(action, mint, Date.now());
+      return signature;
+    } catch (err) {
+      if (err.toString().includes("0x1770")) {
+        return "Already interacted, retrying...";
+      }
 
-    await sleep(wait);
-    await generateTx(data, mint, wait + 500, retry + 1);
+      console.error(`Attempt ${retryCount + 1}: Error in transaction -`, err);
+      if (retryCount === maxRetries) {
+        console.error("Max retries reached, couldn't interact");
+        return "Max retries, couldn't interact";
+      }
+      await sleep(wait);
+      retryCount++;
+      wait += 50; // Incremental backoff
+    }
   }
 }
+
 
 async function shower(mint) {
   console.log(`Showering pet ${mint} ${await generateTx('shower', '56c3d2775ab9841f00', new PublicKey(mint))}`);
 }
 
 async function feed(mint) {
-  console.log(`Feeding pet ${mint} ${await generateTx('feed','56c3d2775ab9841f01', new PublicKey(mint))}`);
+  console.log(`Feeding pet ${mint} ${await generateTx('feed', '56c3d2775ab9841f01', new PublicKey(mint))}`);
 }
 
 async function love(mint) {
-  console.log(`Loving pet ${mint} ${await generateTx('love','56c3d2775ab9841f02', new PublicKey(mint))}`);
+  console.log(`Loving pet ${mint} ${await generateTx('love', '56c3d2775ab9841f02', new PublicKey(mint))}`);
 }
 
 async function actionWithInterval(actionFunc, actionName, mint, interval) {
@@ -192,7 +197,6 @@ async function actionWithInterval(actionFunc, actionName, mint, interval) {
     }, waitTime);
   }
 }
-
 
 
 (async () => {
