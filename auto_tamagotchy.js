@@ -26,7 +26,27 @@ const TAMAGOTCHY_ADMIN = new PublicKey('adTJ5xniDsxZqJVRE5WKfx8btNR9wPgv5SUJZiS7
 const SIGNER = Keypair.fromSecretKey(new Uint8Array(JSON.parse(process.env.USER_PK)))
 const SIGNER_PK = SIGNER.publicKey;
 const connection = new Connection(process.env.RPC_URL);
+let cachedBlockhash = null;
 
+async function updateBlockhash() {
+  try {
+    cachedBlockhash = await connection.getLatestBlockhash({commitment: "finalized"});
+    console.log("Block data updated:", cachedBlockhash);
+  } catch (error) {
+    console.error("Failed to fetch block data:", error);
+  }
+}
+
+function startBlockDataUpdater() {
+  updateBlockhash().finally(() => setInterval(updateBlockhash, 60000));
+}
+
+async function getCachedBlockData() {
+  if (!cachedBlockhash) {
+    await updateBlockhash();
+  }
+  return cachedBlockhash;
+}
 
 function loadState() {
   try {
@@ -108,7 +128,7 @@ async function generateTx(action, data, mint, wait = 1000, maxRetries = 100) {
 
   while (retryCount <= maxRetries) {
     try {
-      const {blockhash, lastValidBlockHeight} = await connection.getLatestBlockhash({commitment: "confirmed"});
+      const {blockhash, lastValidBlockHeight} = await getCachedBlockData();
       msg = new TransactionMessage({
         payerKey: SIGNER_PK, recentBlockhash: blockhash,
         instructions: [
@@ -201,6 +221,8 @@ async function actionWithInterval(actionFunc, actionName, mint, interval) {
 
 (async () => {
   loadState();
+  startBlockDataUpdater();
+
   const pets = await getPets(SIGNER_PK.toBase58());
   const petsMint = pets.result["token_accounts"].filter(acc => acc.delegate === tamaUser.toBase58()).map(acc => acc.mint);
 
