@@ -26,7 +26,7 @@ const TAMAGOTCHY_ADMIN = new PublicKey('adTJ5xniDsxZqJVRE5WKfx8btNR9wPgv5SUJZiS7
 const SIGNER = Keypair.fromSecretKey(new Uint8Array(JSON.parse(process.env.USER_PK)))
 const SIGNER_PK = SIGNER.publicKey;
 const connection = new Connection(process.env.RPC_URL);
-let cachedBlockhash = null;
+/*let cachedBlockhash = null;
 
 async function updateBlockhash() {
   try {
@@ -46,7 +46,7 @@ async function getCachedBlockData() {
     await updateBlockhash();
   }
   return cachedBlockhash;
-}
+}*/
 
 function loadState() {
   try {
@@ -128,12 +128,12 @@ async function generateTx(action, data, mint, wait = 1000, maxRetries = 100) {
 
   while (retryCount <= maxRetries) {
     try {
-      const {blockhash, lastValidBlockHeight} = await getCachedBlockData();
+      const {blockhash, lastValidBlockHeight} = await connection.getLatestBlockhash({commitment: "finalized"});
       msg = new TransactionMessage({
         payerKey: SIGNER_PK, recentBlockhash: blockhash,
         instructions: [
-          ComputeBudgetProgram.setComputeUnitLimit({units: 30_000}),
-          ComputeBudgetProgram.setComputeUnitPrice({microLamports: 100_000}),
+          ComputeBudgetProgram.setComputeUnitLimit({units: 25_000}),
+          ComputeBudgetProgram.setComputeUnitPrice({microLamports: 400_000}),
           new TransactionInstruction({
             data: Buffer.from(data, 'hex'),
             keys: [
@@ -221,7 +221,7 @@ async function actionWithInterval(actionFunc, actionName, mint, interval) {
 
 (async () => {
   loadState();
-  startBlockDataUpdater();
+  // startBlockDataUpdater();
 
   const pets = await getPets(SIGNER_PK.toBase58());
   const petsMint = pets.result["token_accounts"].filter(acc => acc.delegate === tamaUser.toBase58()).map(acc => acc.mint);
