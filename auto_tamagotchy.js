@@ -26,6 +26,7 @@ const TAMAGOTCHY_ADMIN = new PublicKey('adTJ5xniDsxZqJVRE5WKfx8btNR9wPgv5SUJZiS7
 const SIGNER = Keypair.fromSecretKey(new Uint8Array(JSON.parse(process.env.USER_PK)))
 const SIGNER_PK = SIGNER.publicKey;
 const connection = new Connection(process.env.RPC_URL);
+
 /*let cachedBlockhash = null;
 
 async function updateBlockhash() {
@@ -163,15 +164,20 @@ async function generateTx(action, data, mint, wait = 1000, maxRetries = 100) {
       updateState(action, mint, Date.now());
       return signature;
     } catch (err) {
-      if (err.toString().includes("0x1770")) {
-        return "Already interacted, retrying...";
-      }
-
-      console.error(`Attempt ${retryCount + 1}: Error in transaction -`, err);
       if (retryCount === maxRetries) {
         console.error("Max retries reached, couldn't interact");
         return "Max retries, couldn't interact";
       }
+
+      if (err.toString().includes("0x1770")) {
+        retryCount += 20;
+        console.error(`Already interacted, retrying (${retryCount / 20})...`);
+        await sleep(wait);
+        wait += 10;
+        continue;
+      }
+
+      console.error(`Attempt ${retryCount + 1}: Error in transaction -`, err);
       await sleep(wait);
       retryCount++;
       wait += 50; // Incremental backoff
