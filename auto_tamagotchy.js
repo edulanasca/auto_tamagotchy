@@ -14,6 +14,8 @@ import {getAssociatedTokenAddressSync} from "@solana/spl-token";
 import fs from 'fs';
 import {fileURLToPath} from 'url';
 import path from 'path';
+import {AnchorProvider, Program, Wallet} from "@project-serum/anchor";
+import {IDL} from "./Idl.js";
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -48,6 +50,8 @@ async function getCachedBlockData() {
   }
   return cachedBlockhash;
 }*/
+
+const program = new Program(IDL, TAMAGOTCHY_PROGRAM, new AnchorProvider(connection, new Wallet(SIGNER), {}));
 
 function loadState() {
   try {
@@ -198,28 +202,43 @@ async function love(mint) {
   console.log(`Loving pet ${mint} ${await generateTx('love', '56c3d2775ab9841f02', new PublicKey(mint))}`);
 }
 
+async function fetchNftState(mint) {
+  const [tamaNft] = PublicKey.findProgramAddressSync([
+    Buffer.from('nft_tamagotchi'), new PublicKey(mint).toBuffer()
+  ], TAMAGOTCHY_PROGRAM);
+
+  try {
+    return await program.account.nft.fetch(tamaNft);
+  } catch (error) {
+    console.error(`Error fetching NFT state for mint ${tamaNft}:`, error);
+    return null;  // Return null if fetch fails, handle this gracefully in calling code
+  }
+}
+
 async function actionWithInterval(actionFunc, actionName, mint, interval) {
-  const lastExecuted = state[mint] && state[mint][actionName] ? state[mint][actionName] : 0;
+  const nftState = await fetchNftState(mint);
+  if (!nftState) {
+    console.error(`Failed to fetch state for ${mint}, scheduling retry...`);
+    setTimeout(() => actionWithInterval(actionFunc, actionName, mint, interval), 10000); // Retry after 10 seconds
+    return;
+  }
+
+  const lastExecuted = nftState[`last${actionName}Time`]; // Assuming the last times are stored like 'lastFeedTime', 'lastShowerTime', etc.
   const timeSinceLastExec = Date.now() - lastExecuted;
   const waitTime = interval - timeSinceLastExec;
 
   if (waitTime <= 0) {
-    console.log(`Immediately executing ${actionName} for pet ${mint}`);
+    console.log(`Immediately executing ${actionName} for pet ${mint} because scheduled time was missed.`);
     await actionFunc(mint);
-    updateState(actionName, mint, Date.now());
-    console.log(`Scheduling next ${actionName} for pet ${mint} in ${interval} ms`);
-    setTimeout(async () => {
-      await actionWithInterval(actionFunc, actionName, mint, interval);
-    }, interval);
+    console.log(`Scheduling next ${actionName} for pet ${mint} after the regular interval of ${interval} ms.`);
+    setTimeout(() => actionWithInterval(actionFunc, actionName, mint, interval), interval);
   } else {
     console.log(`Scheduling ${actionName} for pet ${mint} in ${waitTime} ms`);
-    setTimeout(async () => {
-      await actionFunc(mint);
-      updateState(actionName, mint, Date.now());
-      console.log(`Scheduling next ${actionName} for pet ${mint} in ${interval} ms`);
-      setTimeout(async () => {
-        await actionWithInterval(actionFunc, actionName, mint, interval);
-      }, interval);
+    setTimeout(() => {
+      console.log(`Executing ${actionName} for pet ${mint} at scheduled time.`);
+      actionFunc(mint);
+      console.log(`Scheduling next ${actionName} for pet ${mint} after the regular interval of ${interval} ms.`);
+      setTimeout(() => actionWithInterval(actionFunc, actionName, mint, interval), interval);
     }, waitTime);
   }
 }
@@ -238,11 +257,11 @@ async function actionWithInterval(actionFunc, actionName, mint, interval) {
   const loveInterval = 8 * 60 * 60 * 1000; // every 8 hours
 
   for (const mint of petsMint) {
-    await actionWithInterval(shower, 'shower', mint, showerInterval);
+    await actionWithInterval(shower, 'Shower', mint, showerInterval);
     await sleep(1000);
-    await actionWithInterval(feed, 'feed', mint, feedInterval);
+    await actionWithInterval(feed, 'Feed', mint, feedInterval);
     await sleep(1000);
-    await actionWithInterval(love, 'love', mint, loveInterval);
+    await actionWithInterval(love, 'Love', mint, loveInterval);
     await sleep(1000);
   }
 })();
