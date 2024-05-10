@@ -11,16 +11,10 @@ import {
   VersionedTransaction
 } from "@solana/web3.js";
 import {getAssociatedTokenAddressSync} from "@solana/spl-token";
-import fs from 'fs';
-import {fileURLToPath} from 'url';
-import path from 'path';
 import {AnchorProvider, Program, Wallet} from "@project-serum/anchor";
 import {IDL} from "./Idl.js";
 
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const stateFilePath = path.join(__dirname, 'state.json');
-let state = {};
 const cache = {};
 const cacheDuration = 300000;
 const TAMAGOTCHY_PROGRAM = new PublicKey('tamaePALUFK3hfwTkWrkHY2aDrPqkrHHq1w6JGP1hPT');
@@ -52,26 +46,6 @@ async function getCachedBlockData() {
 }*/
 
 const program = new Program(IDL, TAMAGOTCHY_PROGRAM, new AnchorProvider(connection, new Wallet(SIGNER), {}));
-
-function loadState() {
-  try {
-    state = JSON.parse(fs.readFileSync(stateFilePath, 'utf8'));
-  } catch (err) {
-    state = {};
-  }
-}
-
-function saveState() {
-  fs.writeFileSync(stateFilePath, JSON.stringify(state));
-}
-
-function updateState(action, mint, timestamp) {
-  if (!state[mint]) {
-    state[mint] = {};
-  }
-  state[mint][action] = timestamp;
-  saveState();
-}
 
 const [tamaUser] = PublicKey.findProgramAddressSync([
   Buffer.from('user_tamagotchi'), SIGNER_PK.toBuffer()
@@ -165,7 +139,7 @@ async function generateTx(action, data, mint, wait = 1000, maxRetries = 100) {
       const signature = await connection.sendTransaction(tx, {maxRetries: 0});
       await sleep(450);
       await connection.confirmTransaction({signature, blockhash, lastValidBlockHeight}, "processed");
-      updateState(action, mint, Date.now());
+      // updateState(action, mint, Date.now());
       return signature;
     } catch (err) {
       if (retryCount === maxRetries) {
@@ -224,7 +198,7 @@ async function actionWithInterval(actionFunc, actionName, mint) {
   }
 
   // Fetch the next action time directly from the blockchain state
-  const nextActionTime = nftState[`last${actionName}Time`].toNumber();
+  const nextActionTime = nftState[`last${actionName}Time`].toNumber() * 1000;
   const currentTime = Date.now();
   const waitTime = nextActionTime - currentTime;
 
@@ -247,7 +221,6 @@ async function actionWithInterval(actionFunc, actionName, mint) {
 
 
 (async () => {
-  loadState();
   // startBlockDataUpdater();
 
   const pets = await getPets(SIGNER_PK.toBase58());
