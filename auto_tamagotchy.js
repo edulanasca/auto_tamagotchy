@@ -215,33 +215,34 @@ async function fetchNftState(mint) {
   }
 }
 
-async function actionWithInterval(actionFunc, actionName, mint, interval) {
+async function actionWithInterval(actionFunc, actionName, mint) {
   const nftState = await fetchNftState(mint);
   if (!nftState) {
     console.error(`Failed to fetch state for ${mint}, scheduling retry...`);
-    setTimeout(() => actionWithInterval(actionFunc, actionName, mint, interval), 10000); // Retry after 10 seconds
+    setTimeout(() => actionWithInterval(actionFunc, actionName, mint), 10000); // Retry after 10 seconds
     return;
   }
 
-  // Assuming `nextActionTime` indicates the next valid time in milliseconds when the action can be executed
-  const nextActionTime = nftState[`last${actionName}Time`].toNumber() * 1000;
+  // Fetch the next action time directly from the blockchain state
+  const nextActionTime = nftState[`last${actionName}Time`].toNumber();
   const currentTime = Date.now();
   const waitTime = nextActionTime - currentTime;
 
   if (waitTime <= 0) {
     console.log(`Immediately executing ${actionName} for pet ${mint} because the scheduled time is now.`);
     await actionFunc(mint);
-    setTimeout(() => actionWithInterval(actionFunc, actionName, mint, interval), interval);
+    setTimeout(() => actionWithInterval(actionFunc, actionName, mint), 500);
   } else {
     console.log(`Scheduling ${actionName} for pet ${mint} in ${waitTime} ms`);
-    setTimeout(async () => {
-      console.log(`Executing ${actionName} for pet ${mint} at scheduled time.`);
-      await actionFunc(mint);
-      // After execution, reschedule it again after the specified interval
-      setTimeout(() => actionWithInterval(actionFunc, actionName, mint, interval), interval);
+    setTimeout(() => {
+      console.log(`Executing ${actionName} for pet ${mint} at the scheduled time.`);
+      actionFunc(mint).then(() => {
+        setTimeout(() => actionWithInterval(actionFunc, actionName, mint), 500);
+      });
     }, waitTime);
   }
 }
+
 
 
 
@@ -252,17 +253,12 @@ async function actionWithInterval(actionFunc, actionName, mint, interval) {
   const pets = await getPets(SIGNER_PK.toBase58());
   const petsMint = pets.result["token_accounts"].filter(acc => acc.delegate === tamaUser.toBase58()).map(acc => acc.mint);
 
-  // Define intervals in milliseconds
-  const feedInterval = 12 * 60 * 60 * 1000; // every 12 hours
-  const showerInterval = 24 * 60 * 60 * 1000; // every 24 hours
-  const loveInterval = 8 * 60 * 60 * 1000; // every 8 hours
-
   for (const mint of petsMint) {
-    await actionWithInterval(shower, 'Shower', mint, showerInterval);
+    await actionWithInterval(shower, 'Shower', mint);
     await sleep(1000);
-    await actionWithInterval(feed, 'Feed', mint, feedInterval);
+    await actionWithInterval(feed, 'Feed', mint);
     await sleep(1000);
-    await actionWithInterval(love, 'Love', mint, loveInterval);
+    await actionWithInterval(love, 'Love', mint);
     await sleep(1000);
   }
 })();
