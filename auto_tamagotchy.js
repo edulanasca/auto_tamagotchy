@@ -223,25 +223,26 @@ async function actionWithInterval(actionFunc, actionName, mint, interval) {
     return;
   }
 
-  const lastExecuted = nftState[`last${actionName}Time`]; // Assuming the last times are stored like 'lastFeedTime', 'lastShowerTime', etc.
-  const timeSinceLastExec = Date.now() - lastExecuted;
-  const waitTime = interval - timeSinceLastExec;
+  // Assuming `nextActionTime` indicates the next valid time in milliseconds when the action can be executed
+  const nextActionTime = nftState[`last${actionName}Time`].toNumber() * 1000;
+  const currentTime = Date.now();
+  const waitTime = nextActionTime - currentTime;
 
   if (waitTime <= 0) {
-    console.log(`Immediately executing ${actionName} for pet ${mint} because scheduled time was missed.`);
+    console.log(`Immediately executing ${actionName} for pet ${mint} because the scheduled time is now.`);
     await actionFunc(mint);
-    console.log(`Scheduling next ${actionName} for pet ${mint} after the regular interval of ${interval} ms.`);
     setTimeout(() => actionWithInterval(actionFunc, actionName, mint, interval), interval);
   } else {
     console.log(`Scheduling ${actionName} for pet ${mint} in ${waitTime} ms`);
-    setTimeout(() => {
+    setTimeout(async () => {
       console.log(`Executing ${actionName} for pet ${mint} at scheduled time.`);
-      actionFunc(mint);
-      console.log(`Scheduling next ${actionName} for pet ${mint} after the regular interval of ${interval} ms.`);
+      await actionFunc(mint);
+      // After execution, reschedule it again after the specified interval
       setTimeout(() => actionWithInterval(actionFunc, actionName, mint, interval), interval);
     }, waitTime);
   }
 }
+
 
 
 (async () => {
