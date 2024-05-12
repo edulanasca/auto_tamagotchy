@@ -189,7 +189,7 @@ async function fetchNftState(mint) {
   }
 }
 
-async function actionWithInterval(actionFunc, actionName, mint) {
+async function actionWithInterval(actionFunc, actionName, mint, interval) {
   const nftState = await fetchNftState(mint);
   if (!nftState) {
     console.error(`Failed to fetch state for ${mint}, scheduling retry...`);
@@ -205,13 +205,13 @@ async function actionWithInterval(actionFunc, actionName, mint) {
   if (waitTime <= 0) {
     console.log(`Immediately executing ${actionName} for pet ${mint} because the scheduled time is now.`);
     await actionFunc(mint);
-    setTimeout(() => actionWithInterval(actionFunc, actionName, mint), 500);
+    setTimeout(() => actionWithInterval(actionFunc, actionName, mint), interval);
   } else {
     console.log(`Scheduling ${actionName} for pet ${mint} in ${waitTime} ms`);
     setTimeout(() => {
       console.log(`Executing ${actionName} for pet ${mint} at the scheduled time.`);
       actionFunc(mint).then(() => {
-        setTimeout(() => actionWithInterval(actionFunc, actionName, mint), 500);
+        setTimeout(() => actionWithInterval(actionFunc, actionName, mint), interval);
       });
     }, waitTime);
   }
@@ -226,12 +226,17 @@ async function actionWithInterval(actionFunc, actionName, mint) {
   const pets = await getPets(SIGNER_PK.toBase58());
   const petsMint = pets.result["token_accounts"].filter(acc => acc.delegate === tamaUser.toBase58()).map(acc => acc.mint);
 
+  const feedInterval = 12 * 60 * 60 * 1000; // every 12 hours
+  const showerInterval = 24 * 60 * 60 * 1000; // every 24 hours
+  const loveInterval = 8 * 60 * 60 * 1000; // every 8 hours
+
+
   for (const mint of petsMint) {
-    await actionWithInterval(shower, 'Shower', mint);
+    await actionWithInterval(shower, 'Shower', mint, showerInterval);
     await sleep(1000);
-    await actionWithInterval(feed, 'Feed', mint);
+    await actionWithInterval(feed, 'Feed', mint, feedInterval);
     await sleep(1000);
-    await actionWithInterval(love, 'Love', mint);
+    await actionWithInterval(love, 'Love', mint, loveInterval);
     await sleep(1000);
   }
 })();
