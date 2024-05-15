@@ -148,11 +148,11 @@ async function generateTx(action, data, mint, wait = 1000, maxRetries = 100) {
       }
 
       if (err.toString().includes("0x1770")) {
-        retryCount += 20;
-        console.error(`Already interacted, retrying (${retryCount / 20})...`);
-        await sleep(wait);
-        wait += 10;
-        continue;
+        // retryCount += 20;
+        // console.error(`Already interacted, retrying (${retryCount / 20})...`);
+        // await sleep(wait);
+        // wait += 10;
+        return "Already interacted, scheduling ...";
       }
 
       console.error(`Attempt ${retryCount + 1}: Error in transaction -`, err);
