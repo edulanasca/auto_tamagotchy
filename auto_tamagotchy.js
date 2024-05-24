@@ -111,8 +111,8 @@ async function generateTx(action, data, mint, wait = 1000, maxRetries = 100) {
       msg = new TransactionMessage({
         payerKey: SIGNER_PK, recentBlockhash: blockhash,
         instructions: [
-          ComputeBudgetProgram.setComputeUnitLimit({units: 25_000}),
-          ComputeBudgetProgram.setComputeUnitPrice({microLamports: 400_000}),
+          ComputeBudgetProgram.setComputeUnitLimit({units: 22_000}),
+          ComputeBudgetProgram.setComputeUnitPrice({microLamports: 100_000}),
           new TransactionInstruction({
             data: Buffer.from(data, 'hex'),
             keys: [
@@ -165,15 +165,15 @@ async function generateTx(action, data, mint, wait = 1000, maxRetries = 100) {
 
 
 async function shower(mint) {
-  console.log(`Showering pet ${mint} ${await generateTx('shower', '56c3d2775ab9841f00', new PublicKey(mint))}`);
+  console.log(`Showering pet ${mint} ${await generateTx('shower', '56c3d2775ab9841f00', new PublicKey(mint))}`); // 19525
 }
 
 async function feed(mint) {
-  console.log(`Feeding pet ${mint} ${await generateTx('feed', '56c3d2775ab9841f01', new PublicKey(mint))}`);
+  console.log(`Feeding pet ${mint} ${await generateTx('feed', '56c3d2775ab9841f01', new PublicKey(mint))}`); // 19525
 }
 
 async function love(mint) {
-  console.log(`Loving pet ${mint} ${await generateTx('love', '56c3d2775ab9841f02', new PublicKey(mint))}`);
+  console.log(`Loving pet ${mint} ${await generateTx('love', '56c3d2775ab9841f02', new PublicKey(mint))}`); // 21021
 }
 
 async function fetchNftState(mint) {
