@@ -13,6 +13,7 @@ import {
 import {getAssociatedTokenAddressSync} from "@solana/spl-token";
 import {AnchorProvider, Program, Wallet} from "@project-serum/anchor";
 import {IDL} from "./Idl.js";
+import {getSimulationComputeUnits} from "@solana-developers/helpers";
 
 
 const cache = {};
@@ -107,38 +108,49 @@ async function generateTx(action, data, mint, wait = 1000, maxRetries = 100) {
 
   while (retryCount <= maxRetries) {
     try {
-      const {blockhash, lastValidBlockHeight} = await connection.getLatestBlockhash({commitment: "finalized"});
+      const instructions = [
+        new TransactionInstruction({
+          data: Buffer.from(data, 'hex'),
+          keys: [
+            // nft
+            {isSigner: false, isWritable: true, pubkey: tamaNft},
+            // config
+            {isSigner: false, isWritable: true, pubkey: tamaConfig},
+            // user
+            {isSigner: false, isWritable: true, pubkey: tamaUser},
+            // NFT mint address
+            {isSigner: false, isWritable: false, pubkey: mint},
+            // NFT owner
+            {isSigner: true, isWritable: true, pubkey: SIGNER_PK},
+            // NFT Ata
+            {isSigner: false, isWritable: true, pubkey: nft_ata},
+            {isSigner: false, isWritable: false, pubkey: SystemProgram.programId}
+          ],
+          programId: TAMAGOTCHY_PROGRAM
+        })
+      ];
+
+      const [units, recentBlockhash] = await Promise.all([
+        getSimulationComputeUnits(connection, instructions, SIGNER_PK, []),
+        connection.getLatestBlockhash({commitment: "finalized"})
+      ]);
+
+      instructions.unshift(ComputeBudgetProgram.setComputeUnitPrice({microLamports: 100_000}));
+      instructions.unshift(ComputeBudgetProgram.setComputeUnitLimit({units: units ?? 22_000}))
+
       msg = new TransactionMessage({
-        payerKey: SIGNER_PK, recentBlockhash: blockhash,
-        instructions: [
-          ComputeBudgetProgram.setComputeUnitLimit({units: 22_000}),
-          ComputeBudgetProgram.setComputeUnitPrice({microLamports: 100_000}),
-          new TransactionInstruction({
-            data: Buffer.from(data, 'hex'),
-            keys: [
-              // nft
-              {isSigner: false, isWritable: true, pubkey: tamaNft},
-              // config
-              {isSigner: false, isWritable: true, pubkey: tamaConfig},
-              // user
-              {isSigner: false, isWritable: true, pubkey: tamaUser},
-              // NFT mint address
-              {isSigner: false, isWritable: false, pubkey: mint},
-              // NFT owner
-              {isSigner: true, isWritable: true, pubkey: SIGNER_PK},
-              // NFT Ata
-              {isSigner: false, isWritable: true, pubkey: nft_ata},
-              {isSigner: false, isWritable: false, pubkey: SystemProgram.programId}
-            ],
-            programId: TAMAGOTCHY_PROGRAM
-          })
-        ]
+        payerKey: SIGNER_PK, recentBlockhash: recentBlockhash.blockhash,
+        instructions,
       });
       const tx = new VersionedTransaction(msg.compileToV0Message());
       tx.sign([SIGNER]);
       const signature = await connection.sendTransaction(tx, {maxRetries: 0});
       await sleep(450);
-      await connection.confirmTransaction({signature, blockhash, lastValidBlockHeight}, "processed");
+      await connection.confirmTransaction({
+        signature,
+        blockhash: recentBlockhash.blockhash,
+        lastValidBlockHeight: recentBlockhash.lastValidBlockHeight,
+      }, "processed");
       // updateState(action, mint, Date.now());
       return signature;
     } catch (err) {
@@ -216,8 +228,6 @@ async function actionWithInterval(actionFunc, actionName, mint, interval) {
     }, waitTime);
   }
 }
-
-
 
 
 (async () => {
