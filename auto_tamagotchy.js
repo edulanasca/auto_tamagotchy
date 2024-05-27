@@ -136,7 +136,7 @@ async function generateTx(action, data, mint, wait = 1000, maxRetries = 100) {
       ]);
 
       instructions.unshift(ComputeBudgetProgram.setComputeUnitPrice({microLamports: 100_000}));
-      instructions.unshift(ComputeBudgetProgram.setComputeUnitLimit({units: units ?? 22_000}))
+      instructions.unshift(ComputeBudgetProgram.setComputeUnitLimit({units: units != null ? units + units * 0.1 : 22_000}))
 
       msg = new TransactionMessage({
         payerKey: SIGNER_PK, recentBlockhash: recentBlockhash.blockhash,
