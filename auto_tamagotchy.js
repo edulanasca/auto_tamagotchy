@@ -159,7 +159,7 @@ async function generateTx(action, data, mint, wait = 1000, maxRetries = 100) {
         return "Max retries, couldn't interact";
       }
 
-      if (err.toString().includes("0x1770")) {
+      if (err.toString().includes("0x1770") || err.toString().includes("6000")) {
         // retryCount += 20;
         // console.error(`Already interacted, retrying (${retryCount / 20})...`);
         // await sleep(wait);
